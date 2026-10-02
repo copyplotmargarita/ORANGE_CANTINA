@@ -56,9 +56,9 @@ export async function renderReportes(container) {
                     <p class="text-sm text-muted font-bold" id="repTotalBS">Bs. 0,00</p>
                 </div>
 
-                <div class="flex gap-sm mt-md">
-                    <button class="btn btn-primary btn-lg" style="flex: 1;" id="btnGenerarPDF">📄 Generar Reporte PDF</button>
-                    <button class="btn btn-success btn-lg hidden" style="flex: 1;" id="btnAbonarRep">💰 Registrar Abono / Pago</button>
+                <div class="flex flex-col gap-sm mt-md">
+                    <button class="btn btn-primary btn-lg w-full" id="btnGenerarPDF">📄 Generar Reporte PDF</button>
+                    <button class="btn btn-success btn-lg w-full hidden" id="btnAbonarRep">💰 Registrar Abono / Pago</button>
                 </div>
             </div>
         </div>

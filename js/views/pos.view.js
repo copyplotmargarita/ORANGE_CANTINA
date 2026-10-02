@@ -3,10 +3,11 @@
 // Punto de Venta (Carrito, Selección de Estudiante y Pagos)
 // ============================================================
 
-import { showNotification, showConfirm, formatCurrencyDE, bcvToBS, bsToUSD, applyAtmMask, parseAtmAmount } from '../utils.js';
-import { getEstudiantes } from '../services/estudiantes.service.js';
+import { showNotification, showConfirm, formatCurrencyDE, bcvToBS, bsToUSD, applyAtmMask, parseAtmAmount, capitalizeWords } from '../utils.js';
+import { getEstudiantes, createEstudiante } from '../services/estudiantes.service.js';
 import { getProductos } from '../services/productos.service.js';
 import { registrarVenta } from '../services/ventas.service.js';
+import { getRepresentantes, createRepresentante, updateRepresentante } from '../services/representantes.service.js';
 
 const METODOS_BS = ['Bs. Efectivo', 'Transferencia', 'Pago Móvil', 'Punto de Venta', 'BioPago'];
 const METODOS_USD = ['Dólares en Efectivo', 'Binance', 'PayPal', 'Zelle', 'Zinli', 'Wallet'];
@@ -16,6 +17,7 @@ let currentBcvRate = 1;
 
 let estudiantes = [];
 let productos = [];
+let representantesPOS = [];
 
 // Estado del POS
 let estudianteSeleccionado = null;
@@ -37,8 +39,10 @@ export async function renderPOS(container) {
             <!-- Selector de Alumno -->
             <div class="card card-accent-top">
                 <h3 class="mb-sm text-primary">1. Seleccionar Alumno</h3>
-                <input type="text" id="posBuscadorAlumno" class="form-input" list="listaAlumnosPOS" autocomplete="off" placeholder="Buscar por nombre...">
-                <datalist id="listaAlumnosPOS"></datalist>
+                <div class="autocomplete-container" style="position: relative;">
+                    <input type="text" id="posBuscadorAlumno" class="form-input form-select" autocomplete="new-password" spellcheck="false" placeholder="Buscar por nombre (mín. 2 letras)...">
+                    <div id="posAutocompleteResults" class="hidden" style="position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: var(--bg-surface); color: var(--text-main); border: 1px solid var(--border); border-radius: var(--radius-md); z-index: 1000; max-height: 250px; overflow-y: auto; box-shadow: var(--shadow-lg);"></div>
+                </div>
                 
                 <div id="posAlumnoSeleccionado" class="mt-sm hidden">
                     <div class="flex justify-between items-center bg-gray p-sm rounded">
@@ -175,6 +179,51 @@ export async function renderPOS(container) {
                 </div>
             </div>
         </div>
+        <!-- Modal Crear Alumno Express -->
+        <div id="modalCrearAlumnoPOS" class="modal-overlay">
+            <div class="modal" style="max-height: 90vh; display: flex; flex-direction: column;">
+                <div class="modal-header">
+                    <h3>Nuevo Alumno</h3>
+                    <button class="modal-close" id="btnCerrarModalCrearAlumnoPOS">✖</button>
+                </div>
+                <div class="modal-body" style="overflow-y: auto; padding: var(--space-md);">
+                    <div class="form-stack">
+                        <div class="form-group">
+                            <label class="form-label">NOMBRE Y APELLIDO (ALUMNO)</label>
+                            <input type="text" id="posNuevoAlumnoNombre" class="form-input">
+                        </div>
+                        <div class="flex gap-sm">
+                            <div class="form-group" style="flex: 2;">
+                                <label class="form-label">GRADO</label>
+                                <select id="posNuevoAlumnoGrado" class="form-select">
+                                    <option>Pre-Kinder</option><option>Kinder</option>
+                                    <option>1ro Primaria</option><option>2do Primaria</option><option>3ro Primaria</option><option>4to Primaria</option><option>5to Primaria</option><option>6to Primaria</option>
+                                    <option>1ro Bachillerato</option><option>2do Bachillerato</option><option>3ro Bachillerato</option><option>4to Bachillerato</option><option>5to Bachillerato</option>
+                                </select>
+                            </div>
+                            <div class="form-group" style="flex: 1;">
+                                <label class="form-label">SECCIÓN</label>
+                                <select id="posNuevoAlumnoSeccion" class="form-select">
+                                    <option>A</option><option>B</option><option>C</option><option>D</option><option>E</option><option>F</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-group mt-sm">
+                            <label class="form-label">NOMBRE Y APELLIDO (REPRESENTANTE)</label>
+                            <input type="text" id="posNuevoAlumnoRepNombre" class="form-input" list="listaRepresentantesPOS" autocomplete="off" placeholder="Buscar o escribir nombre...">
+                            <datalist id="listaRepresentantesPOS"></datalist>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">TELÉFONO DEL REPRESENTANTE</label>
+                            <input type="tel" id="posNuevoAlumnoRepTel" class="form-input" placeholder="Ej: 04141234567">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-primary btn-block btn-lg" id="btnPOSGuardarNuevoAlumno">Guardar y Seleccionar</button>
+                </div>
+            </div>
+        </div>
     `;
 
     applyAtmMask(document.getElementById('modalMontoPago'));
@@ -185,17 +234,20 @@ export async function renderPOS(container) {
 
 async function cargarDatosIniciales() {
     try {
-        const [est, prods] = await Promise.all([
+        const [est, prods, reps] = await Promise.all([
             getEstudiantes(businessId),
-            getProductos(businessId)
+            getProductos(businessId),
+            getRepresentantes(businessId)
         ]);
         
         estudiantes = est.sort((a,b) => a.nombre.localeCompare(b.nombre));
         productos = prods.filter(p => p.activo).sort((a,b) => a.nombre.localeCompare(b.nombre));
+        representantesPOS = reps;
 
-        // Poblar datalist
-        const dl = document.getElementById('listaAlumnosPOS');
-        dl.innerHTML = estudiantes.map(e => `<option value="${e.nombre} ${e.apellido}">${e.grado} "${e.seccion}"</option>`).join('');
+        const dlReps = document.getElementById('listaRepresentantesPOS');
+        if (dlReps) {
+            dlReps.innerHTML = reps.map(r => `<option value="${r.nombre}">${r.telefono}</option>`).join('');
+        }
 
         renderCatálogo();
     } catch(err) {
@@ -204,13 +256,144 @@ async function cargarDatosIniciales() {
 }
 
 function configurarEventos() {
-    // Alumno
-    document.getElementById('posBuscadorAlumno').addEventListener('input', (e) => {
-        const val = e.target.value.trim();
-        const est = estudiantes.find(x => `${x.nombre} ${x.apellido}` === val);
-        if (est) {
-            seleccionarAlumno(est);
-            e.target.value = '';
+    // Alumno Autocomplete
+    const inputBuscador = document.getElementById('posBuscadorAlumno');
+    const resultsContainer = document.getElementById('posAutocompleteResults');
+
+    inputBuscador.addEventListener('input', (e) => {
+        const val = e.target.value.toLowerCase().trim();
+        
+        if (val.length < 2) {
+            resultsContainer.classList.add('hidden');
+            return;
+        }
+
+        const matches = estudiantes.filter(x => `${x.nombre} ${x.apellido}`.toLowerCase().includes(val));
+        
+        let html = '';
+        if (matches.length > 0) {
+            html += matches.map(est => `
+                <div class="p-sm cursor-pointer autocomplete-item" data-id="${est.id}" style="border-bottom: 1px solid var(--border);">
+                    <div class="font-bold">${est.nombre} ${est.apellido}</div>
+                    <div class="text-xs text-muted">${est.grado} "${est.seccion}"</div>
+                </div>
+            `).join('');
+        }
+        
+        html += `
+            <div class="p-sm cursor-pointer text-primary font-bold autocomplete-item hover-bg-gray" id="btnPOSCrearAlumno">
+                ➕ Crear alumno "${e.target.value.trim()}"
+            </div>
+        `;
+        
+        resultsContainer.innerHTML = html;
+        resultsContainer.classList.remove('hidden');
+
+        // Eventos de selección
+        resultsContainer.querySelectorAll('.autocomplete-item[data-id]').forEach(item => {
+            item.addEventListener('click', () => {
+                const est = estudiantes.find(x => x.id === item.dataset.id);
+                if (est) {
+                    seleccionarAlumno(est);
+                    inputBuscador.value = '';
+                    resultsContainer.classList.add('hidden');
+                }
+            });
+        });
+
+        // Evento crear
+        document.getElementById('btnPOSCrearAlumno').addEventListener('click', () => {
+            resultsContainer.classList.add('hidden');
+            document.getElementById('posNuevoAlumnoNombre').value = capitalizeWords(e.target.value.trim());
+            document.getElementById('posNuevoAlumnoRepTel').value = '';
+            document.getElementById('posNuevoAlumnoRepNombre').value = '';
+            document.getElementById('modalCrearAlumnoPOS').classList.add('active');
+        });
+    });
+
+    // Ocultar resultados al hacer click fuera
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('.autocomplete-container')) {
+            resultsContainer.classList.add('hidden');
+        }
+    });
+
+    // Eventos Modal Crear Alumno Express
+    document.getElementById('btnCerrarModalCrearAlumnoPOS').addEventListener('click', () => {
+        document.getElementById('modalCrearAlumnoPOS').classList.remove('active');
+    });
+
+    document.getElementById('posNuevoAlumnoRepNombre').addEventListener('input', (e) => {
+        const nombreIngresado = e.target.value.trim();
+        const rep = representantesPOS.find(r => r.nombre === nombreIngresado);
+        if (rep && rep.telefono) {
+            document.getElementById('posNuevoAlumnoRepTel').value = rep.telefono;
+        }
+    });
+
+    document.getElementById('btnPOSGuardarNuevoAlumno').addEventListener('click', async (e) => {
+        const btn = e.target;
+        const nombreCompleto = document.getElementById('posNuevoAlumnoNombre').value.trim();
+        const partesNombre = nombreCompleto.split(/\s+/);
+        
+        if (partesNombre.length < 2) {
+            showNotification('El alumno debe tener al menos un nombre y un apellido', 'warning');
+            return;
+        }
+
+        const estData = {
+            nombre: capitalizeWords(partesNombre[0]),
+            apellido: capitalizeWords(partesNombre.slice(1).join(' ')),
+            grado: document.getElementById('posNuevoAlumnoGrado').value,
+            seccion: document.getElementById('posNuevoAlumnoSeccion').value
+        };
+
+        const repData = {
+            telefono: document.getElementById('posNuevoAlumnoRepTel').value.trim(),
+            nombre: capitalizeWords(document.getElementById('posNuevoAlumnoRepNombre').value.trim())
+        };
+
+        if (!repData.telefono || !repData.nombre) {
+            showNotification('Completa los datos del representante', 'warning');
+            return;
+        }
+
+        btn.disabled = true;
+        btn.innerHTML = '<div class="spinner"></div> Guardando...';
+
+        try {
+            let repId = null;
+            const repExistente = representantesPOS.find(r => r.telefono === repData.telefono);
+
+            if (repExistente) {
+                if (repExistente.nombre !== repData.nombre) {
+                    await updateRepresentante(businessId, repExistente.id, { nombre: repData.nombre });
+                }
+                repId = repExistente.id;
+            } else {
+                repId = await createRepresentante(businessId, repData);
+                representantesPOS.push({ id: repId, ...repData });
+            }
+
+            estData.representanteId = repId;
+            const newEstId = await createEstudiante(businessId, estData);
+            
+            const newEst = { id: newEstId, ...estData, estadoCuentaUSD: 0, walletSaldoUSD: 0 };
+            estudiantes.push(newEst);
+            estudiantes.sort((a,b) => a.nombre.localeCompare(b.nombre));
+
+            showNotification('Alumno registrado y seleccionado', 'success');
+            document.getElementById('modalCrearAlumnoPOS').classList.remove('active');
+            
+            inputBuscador.value = '';
+            seleccionarAlumno(newEst);
+
+        } catch (error) {
+            console.error('Error guardando:', error);
+            showNotification('Ocurrió un error al guardar', 'error');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Guardar y Seleccionar';
         }
     });
 
