@@ -5,7 +5,7 @@
 // ============================================================
 
 import { auth, db, signOut, doc, getDoc } from '../firebase-config.js';
-import { showNotification, toggleTheme, formatCurrencyDE } from '../utils.js';
+import { showNotification, toggleTheme, formatCurrencyDE, formatDateToDDMMYYYY } from '../utils.js';
 import { renderEstudiantes } from './estudiantes.view.js';
 import { renderProductos } from './productos.view.js';
 import { renderPOS } from './pos.view.js';
@@ -14,12 +14,12 @@ import { renderReportes } from './reportes.view.js';
 
 // ──────────── Módulos de navegación ────────────
 const NAV_ITEMS = [
-    { id: 'inicio',       emoji: '🏠', label: 'Inicio',       mobileNav: true },
+    { id: 'inicio',       emoji: '🏠', label: 'Inicio',       mobileNav: false },
     { id: 'ventas',       emoji: '🛒', label: 'Ventas',       mobileNav: true },
     { id: 'estudiantes',  emoji: '🎓', label: 'Alumnos',      mobileNav: true },
     { id: 'cuentas',      emoji: '💰', label: 'Cuentas',      mobileNav: true },
-    { id: 'productos',    emoji: '📦', label: 'Productos',    mobileNav: false },
-    { id: 'reportes',     emoji: '📊', label: 'Reportes',     mobileNav: false },
+    { id: 'productos',    emoji: '📦', label: 'Productos',    mobileNav: true },
+    { id: 'reportes',     emoji: '📊', label: 'Reportes',     mobileNav: true },
 ];
 
 // ──────────── Vista activa ────────────
@@ -66,28 +66,27 @@ export async function renderDashboard(container) {
 
         <!-- Contenido Principal -->
         <main class="main-content" id="mainContent">
-            <!-- Header con BCV -->
-            <header class="flex items-center justify-between mb-lg flex-wrap gap-sm">
-                <div>
-                    <h2 id="viewTitle" style="color: var(--primary);">🏠 Inicio</h2>
-                    <p class="text-sm text-muted" id="viewSubtitle">${businessData?.nombreColegio || ''}</p>
+            <!-- Header con Fecha y BCV -->
+            <header class="flex items-center justify-between mb-lg" style="gap: 0.25rem; flex-wrap: nowrap;">
+                <div style="flex-shrink: 0;">
+                    <h2 style="color: var(--primary); font-size: 1.25rem; font-weight: 800; margin: 0; white-space: nowrap;">${formatDateToDDMMYYYY(new Date())}</h2>
                 </div>
-                <div class="flex items-center gap-sm">
+                <div class="flex items-center" style="gap: 0.25rem; flex-shrink: 1; overflow-x: auto; justify-content: flex-end;">
                     <!-- Tasa BCV -->
-                    <div class="card" style="padding: 0.5rem 0.875rem; display: flex; align-items: center; gap: 0.5rem;">
+                    <div class="card" style="padding: 0.25rem 0.5rem; display: flex; align-items: center; gap: 0.25rem; margin: 0; white-space: nowrap; border-radius: 1.5rem;">
                         <span class="text-xs font-bold text-muted">BCV</span>
-                        <span class="font-bold text-primary" id="bcvRateDisplay">--</span>
+                        <span class="font-bold text-primary" id="bcvRateDisplay" style="font-size: 1rem;">--</span>
                         <span class="text-xs text-muted">Bs/$</span>
-                        <button class="btn btn-ghost btn-sm" id="btnEditBcv" title="Editar tasa" style="padding: 0.25rem; min-height: auto;">
+                        <button class="btn btn-ghost btn-sm" id="btnEditBcv" title="Editar tasa" style="padding: 0.15rem; min-height: auto;">
                             ✏️
                         </button>
                     </div>
                     <!-- Tema (móvil) -->
-                    <button class="theme-toggle" id="btnThemeMobile" title="Cambiar tema">
+                    <button class="theme-toggle" id="btnThemeMobile" title="Cambiar tema" style="flex-shrink: 0; width: 38px; height: 38px; padding: 0; display: flex; align-items: center; justify-content: center;">
                         🌙
                     </button>
                     <!-- Menú hamburguesa (móvil) — para opciones extra -->
-                    <button class="theme-toggle" id="btnMenuMobile" title="Más opciones">
+                    <button class="theme-toggle" id="btnMenuMobile" title="Más opciones" style="flex-shrink: 0; width: 38px; height: 38px; padding: 0; display: flex; align-items: center; justify-content: center;">
                         ☰
                     </button>
                 </div>
@@ -106,10 +105,6 @@ export async function renderDashboard(container) {
                     <span>${item.label}</span>
                 </button>
             `).join('')}
-            <button class="bottom-nav-item" id="btnMoreMobile">
-                <span class="nav-icon">⋯</span>
-                <span>Más</span>
-            </button>
         </nav>
     `;
 
@@ -171,11 +166,6 @@ function setupNavigation() {
 
     // Logo → Inicio
     document.getElementById('navHome')?.addEventListener('click', () => switchView('inicio'));
-
-    // Botón "Más" en bottom nav (menú extra)
-    document.getElementById('btnMoreMobile')?.addEventListener('click', () => {
-        showMobileMenu();
-    });
 }
 
 /**
@@ -195,12 +185,7 @@ function switchView(viewId) {
         btn.classList.toggle('active', btn.dataset.view === viewId);
     });
 
-    // Actualizar título
-    const navItem = NAV_ITEMS.find(i => i.id === viewId);
-    const titleEl = document.getElementById('viewTitle');
-    if (titleEl && navItem) {
-        titleEl.textContent = `${navItem.emoji} ${navItem.label}`;
-    }
+    // (El título de la vista y subtitulo han sido removidos del header a favor de la fecha)
 
     // Renderizar vista
     renderActiveView();
@@ -244,22 +229,8 @@ async function renderActiveView() {
  * Renderiza la pantalla de inicio / dashboard principal.
  */
 function renderHome(content) {
-    const cantinaName = businessData?.nombreCantina || 'Tu Cantina';
-    const colegioName = businessData?.nombreColegio || 'Tu Colegio';
-
     content.innerHTML = `
         <div class="card-grid" style="margin-bottom: var(--space-lg);">
-            <!-- Tarjeta de Bienvenida -->
-            <div class="card card-accent-top" style="grid-column: 1 / -1;">
-                <div class="flex items-center gap-md">
-                    <span style="font-size: 2.5rem;">🍊</span>
-                    <div>
-                        <h2 style="color: var(--primary); margin-bottom: 2px;">${cantinaName}</h2>
-                        <p class="text-sm text-muted">${colegioName}</p>
-                    </div>
-                </div>
-            </div>
-
             <!-- Resumen rápido — placeholders hasta que se conecten los módulos -->
             <div class="card card-clickable" data-goto="ventas">
                 <div class="flex items-center gap-sm mb-sm">
@@ -291,6 +262,14 @@ function renderHome(content) {
                     <h3>Productos</h3>
                 </div>
                 <p class="text-secondary text-sm">Administrar catálogo y precios</p>
+            </div>
+
+            <div class="card card-clickable" data-goto="reportes">
+                <div class="flex items-center gap-sm mb-sm">
+                    <span style="font-size: 1.5rem;">📊</span>
+                    <h3>Reportes</h3>
+                </div>
+                <p class="text-secondary text-sm">Ver e imprimir reportes generales</p>
             </div>
         </div>
     `;
@@ -463,13 +442,6 @@ function showMobileMenu() {
         <div class="modal" style="max-width: 320px; padding-bottom: 2rem;">
             <div class="modal-drag-bar"></div>
             <div class="flex flex-col gap-xs">
-                ${NAV_ITEMS.filter(i => !i.mobileNav).map(item => `
-                    <button class="sidebar-item" data-menu-view="${item.id}" style="padding: 1rem;">
-                        <span class="nav-emoji" style="font-size: 1.3rem;">${item.emoji}</span>
-                        <span style="font-size: 1rem;">${item.label}</span>
-                    </button>
-                `).join('')}
-                <div class="divider"></div>
                 <button class="sidebar-item" id="btnLogoutMobile" style="color: var(--danger); padding: 1rem;">
                     <span class="nav-emoji" style="font-size: 1.3rem;">🚪</span>
                     <span style="font-size: 1rem;">Cerrar Sesión</span>
@@ -482,14 +454,6 @@ function showMobileMenu() {
 
     // Cerrar al hacer clic fuera
     overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
-
-    // Navegación desde el menú
-    overlay.querySelectorAll('[data-menu-view]').forEach(btn => {
-        btn.addEventListener('click', () => {
-            overlay.remove();
-            switchView(btn.dataset.menuView);
-        });
-    });
 
     // Logout desde menú móvil
     overlay.querySelector('#btnLogoutMobile')?.addEventListener('click', () => {

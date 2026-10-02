@@ -2,7 +2,7 @@
 # Ejecutar: .\run_dev.ps1
 # Abre http://localhost:8088
 
-$port = 8088
+$port = 8090
 $root = $PSScriptRoot
 
 Write-Host ""
@@ -15,4 +15,4 @@ Write-Host ""
 Start-Process "http://localhost:$port"
 
 # Iniciar servidor HTTP con Python
-python -m http.server $port --directory $root
+python -m http.server $port --bind 0.0.0.0 --directory $root
